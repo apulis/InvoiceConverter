@@ -40,3 +40,6 @@ python .\invoice_converter.py
 
 电子发票pdf------>PNG图片------>插入pptx模板（调整位置、大小）------>导出pdf文件
 
+### 已知问题：
+
+1、使用Cmder 运行脚本报错，无法调用ms office。请改用系统自带PowerShell执行。
