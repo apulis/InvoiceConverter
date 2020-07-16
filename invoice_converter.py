@@ -12,6 +12,15 @@ tempImagePath = './temp/images'
 tempPptxPath = './temp/pptx'
 templatePptxPath = './凭证粘贴模板.pptx'
 outPath = './outputs'
+gdict = {0:u'零',1:u'壹',2:u'贰',3:u'叁',4:u'肆',5:u'伍',6:u'陆',7:u'柒',8:u'捌',9:u'玖',10:u'拾'}
+#总页数
+totalPage = None
+#总金额
+totalAmount = None
+#经办人
+name = None
+#是否自动计算总页数、总金额
+skip = False
 
 def pyMuPDF_fitz(pdfPath, imagePath):
     # startTime_pdf2img = datetime.datetime.now()#开始时间
@@ -35,31 +44,26 @@ def pyMuPDF_fitz(pdfPath, imagePath):
 
     pix.writePNG('%s/%s.png' % (imagePath, pdfName))#将图片写入指定的文件夹内
 
-    # for pg in range(pdfDoc.pageCount):
-    #     page = pdfDoc[pg]
-    #     rotate = int(0)
-    #     # 每个尺寸的缩放系数为1.3，这将为我们生成分辨率提高2.6的图像。
-    #     # 此处若是不做设置，默认图片大小为：792X612, dpi=96
-    #     zoom_x = 2.2 #(1.33333333-->1056x816)   (2-->1584x1224)
-    #     zoom_y = 2.2
-    #     mat = fitz.Matrix(zoom_x, zoom_y).preRotate(rotate)
-    #     pix = page.getPixmap(matrix=mat, alpha=False)
-
-    #     if not os.path.exists(imagePath):#判断存放图片的文件夹是否存在
-    #         os.makedirs(imagePath) # 若图片文件夹不存在就创建
-
-    #     # pix.writePNG(imagePath+'/'+'images_%s.png' % pg)#将图片写入指定的文件夹内
-    #     pix.writePNG(imagePath+'/'+'%s_%s.png' % (pdfName, pg))#将图片写入指定的文件夹内
-
-    # endTime_pdf2img = datetime.datetime.now()#结束时间
-    # print('pdf2img时间=',(endTime_pdf2img - startTime_pdf2img).seconds)
-
 def batchPdf2Png(invoicePath, outPngPath):
     files = os.listdir(invoicePath)
     pdfFiles = [f for f in files if f.endswith((".pdf"))]
+    
+    global totalPage, totalAmount
+
+    #计算总页数
+    if not skip :
+        totalPage = len(pdfFiles)
+    
+    #计算总金额
+    if not skip :
+        totalAmount = 0
+
     for pdfFile in pdfFiles:
         fullpath = os.path.join(invoicePath, pdfFile)
         pyMuPDF_fitz(fullpath, outPngPath)
+
+        if not skip :
+            totalAmount +=  float(pdfFile[:-4])
 
 def insertPngInSlide(path_to_presentation, img_path):
     prs = Presentation(path_to_presentation)
@@ -69,17 +73,56 @@ def insertPngInSlide(path_to_presentation, img_path):
     pic = slide.shapes.add_picture(img_path, left, top, height=height, width=width)
     prs.save('test.pptx')
 
+def numToCN(num):
+    cn = ''
+
+    if num < 10:
+        cn = gdict[num]
+    elif num > 10 and num < 100 :
+        if num % 10 == 0:
+            cn = '{0}拾'.format(gdict[num // 10])
+        else:
+            cn = '{0}拾{1}'.format(gdict[num // 10], gdict[num % 10])
+    return cn
+
+def fillTextInSlide(slide, curPage, totalPage, totalAmount, curAmount):
+    global name
+
+    for shape in slide.shapes:
+        if not shape.has_text_frame:
+            continue
+        for paragraph in shape.text_frame.paragraphs:
+            for run in paragraph.runs:
+                if run.text == '凭证总张数：':
+                    run.text = '凭证总张数：{0}张'.format(numToCN(totalPage))
+                if run.text == '本页张数：':
+                    run.text = '本页张数：' + '壹张'
+                if run.text == '凭证总金额：':
+                    run.text = '凭证总金额：¥{total:.2f}'.format(total=totalAmount)
+                if run.text == '本页金额：':
+                    run.text = '本页金额：¥{cur:.2f}'.format(cur=curAmount)
+                if run.text == '经办人：':
+                    run.text = '经办人：{name}'.format(name=name)
+                if run.text == '第      页        共      页':
+                    run.text = '第  {0}  页        共  {1}  页'.format(curPage, totalPage)
+
 def batchInsertPngInSlide(path_to_tmpl_presentation, imgsPath):
     left, top, width, height= Cm(4.28), Cm(2.79), Cm(25.58), Cm(16.59)
 
     files = os.listdir(imgsPath)
     pngfiles = [f for f in files if f.endswith((".png"))]
-    for pngfile in pngfiles:
+
+    for index, pngfile in enumerate(pngfiles):
         fullpath = os.path.join(imgsPath, pngfile)
 
         prs = Presentation(path_to_tmpl_presentation)
         slide = prs.slides[0]        
         pic = slide.shapes.add_picture(fullpath, left, top, height=height, width=width)
+
+        # 填入文字内容
+        curAmount = float(pngfile[:-4])
+        fillTextInSlide(slide, index+1, totalPage, totalAmount, curAmount)
+
         pptxPath = os.path.join(tempPptxPath, os.path.splitext(pngfile)[0]+'.pptx')
         prs.save(pptxPath)
 
@@ -150,9 +193,24 @@ def mergefiles(path, output_filename, import_bookmarks=False):
     merger.close()
 
 def excetue():
+    if len(sys.argv) != 2 and len(sys.argv) != 4:
+        print('参数个数不对')
+        return
+
+    global name, totalPage, totalAmount, skip
+
+    name = str(sys.argv[1])
+
+    if len(sys.argv) == 4:
+        totalPage = int(sys.argv[2])
+        totalAmount = float(sys.argv[3])
+        skip = True
+
     # pdf转图片
     batchPdf2Png(invoicePath, tempImagePath)
+    # batchPdf2Png(invoicePath, tempImagePath, totalPage, totalAmount)
     # 图片插入pptx模板
+    # batchInsertPngInSlide(templatePptxPath, tempImagePath, totalPage, totalAmount)
     batchInsertPngInSlide(templatePptxPath, tempImagePath)
     # pptx导出pdf
     powerpoint = init_powerpoint()
@@ -165,5 +223,10 @@ def excetue():
     del_file(tempPptxPath)
     # 合并pdf文件
     mergefiles(outPath, 'All.pdf')
+
+def printText():
+    fillTextInSlide(templatePptxPath, 10, 21, 300,100)
+
 if __name__ == '__main__':
     excetue()
+    # printText()
