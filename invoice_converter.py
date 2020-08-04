@@ -92,16 +92,16 @@ class InvoiceConverter(object):
                 for run in paragraph.runs:
                     if run.text == '凭证总张数：':
                         run.text = '凭证总张数：{}张'.format(numToCN(totalPage))
-                    if run.text == '本页张数：':
+                    if run.text == '本页张数：' and curAmount:
                         run.text = '本页张数：' + '壹张'
                     if run.text == '凭证总金额：':
                         run.text = '凭证总金额：¥{total:.2f}'.format(total=totalAmount)
-                    if run.text == '本页金额：':
+                    if run.text == '本页金额：' and curAmount:
                         run.text = '本页金额：¥{cur:.2f}'.format(cur=curAmount)
                     if run.text == '经办人：':
                         run.text = '经办人：{}'.format(self.name)
                     if run.text == '第      页        共      页':
-                        run.text = '第  {0}  页        共  {1:.0f}  页'.format(curPage, totalPaper)
+                        run.text = '第  {}  页        共  {}  页'.format(curPage, totalPaper)
 
     def batchInsertPngInSlide(self, path_to_tmpl_presentation, imgsPath):
         left, top, width, height= Cm(4.28), Cm(2.79), Cm(25.58), Cm(16.59)
@@ -109,6 +109,7 @@ class InvoiceConverter(object):
         files = os.listdir(imgsPath)
         pngfiles = [f for f in files if f.endswith((".png"))]
 
+        # 生成电子发票pptx页
         for index, pngfile in enumerate(pngfiles):
             fullpath = os.path.join(imgsPath, pngfile)
 
@@ -122,7 +123,23 @@ class InvoiceConverter(object):
 
             pptxPath = os.path.join(self.tempPptxPath, os.path.splitext(pngfile)[0]+'.pptx')
             prs.save(pptxPath)
+        
+    def batchPaperInvoiceSlide(self, path_to_tmpl_presentation, imgsPath):
+        files = os.listdir(imgsPath)
+        # 电子发票总数
+        eInvoiceCount = len(files)-1    # 忽略.gitkeep文件
+        # 生成电子发票pptx页
+        for index in range(eInvoiceCount+1, self.totalPaper+1):
+            prs = Presentation(path_to_tmpl_presentation)
+            slide = prs.slides[0]
 
+            # 填入文字内容
+            # print(index)
+            self.fillTextInSlide(slide, index, self.totalPage, self.totalAmount, None, self.totalPaper)
+
+            pptxPath = os.path.join(self.tempPptxPath, 'Page_{}.pptx'.format(index))
+            prs.save(pptxPath)
+        
     def init_powerpoint(self):
         powerpoint = comtypes.client.CreateObject("Powerpoint.Application")
         powerpoint.Visible = 1
@@ -148,7 +165,8 @@ class InvoiceConverter(object):
         for i in os.listdir(path_data) :# os.listdir(path_data)#返回一个列表，里面是当前目录下面的所有东西的相对路径
             file_data = path_data + "\\" + i#当前文件夹的下面的所有东西的绝对路径
             if os.path.isfile(file_data) == True:#os.path.isfile判断是否为文件,如果是文件,就删除.如果是文件夹.递归给del_file.
-                os.remove(file_data)
+                if not file_data.endswith('.gitkeep'):
+                    os.remove(file_data)
             else:
                 self.del_file(file_data)
 
@@ -191,6 +209,15 @@ class InvoiceConverter(object):
         print('合并后的输出文件：%s'%(out_filename))
         merger.close()
 
+        # # 删除单个pdf文件
+        # filelist = self.getfilenames(filepath=self.outPath, file_ext='.pdf')
+
+        # for filename in filelist:
+        #     fileAbsPath = os.path.abspath(filename)
+        #     print(fileAbsPath)
+        #     if not fileAbsPath.endswith('All.pdf'):
+        #         os.remove(fileAbsPath)
+
 def excetue():
     if len(sys.argv) != 2 and len(sys.argv) != 5:
         print('参数个数不对')
@@ -206,7 +233,7 @@ def excetue():
     if len(sys.argv) == 5:
         totalPage = int(sys.argv[2])        #凭证总张数
         totalAmount = float(sys.argv[3])    #凭证总金额
-        totalPaper = float(sys.argv[4])     #总页数
+        totalPaper = int(sys.argv[4])     #总页数
         skip = True
 
     ic = InvoiceConverter(name, totalPage, totalAmount, totalPaper, skip)
@@ -216,6 +243,9 @@ def excetue():
 
     # 图片插入pptx模板
     ic.batchInsertPngInSlide(ic.templatePptxPath, ic.tempImagePath)
+
+    # 生成纸质发票粘贴pptx页
+    ic.batchPaperInvoiceSlide(ic.templatePptxPath, ic.tempImagePath)
 
     # pptx导出pdf
     powerpoint = ic.init_powerpoint()
