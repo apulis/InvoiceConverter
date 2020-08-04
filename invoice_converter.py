@@ -22,7 +22,7 @@ def numToCN(num):
     return cn
 
 class InvoiceConverter(object):
-    def __init__(self, name, totalPage = None, totalAmount = None, skip = False):
+    def __init__(self, name, totalPage = None, totalAmount = None, totalPaper = None, skip = False):
         # 电子发票路径
         self.invoicePath = './inputs'
         # images临时目录
@@ -36,11 +36,13 @@ class InvoiceConverter(object):
 
         #经办人
         self.name = name
-        #总页数
+        #凭证总张数
         self.totalPage = totalPage
-        #总金额
+        #凭证总金额
         self.totalAmount = totalAmount
-        #是否自动计算总页数、总金额
+        #总页数
+        self.totalPaper = totalPaper        
+        #是否自动计算凭证总张数、总金额、总页数
         self.skip = skip
 
     def pyMuPDF_fitz(self, pdfPath, imagePath):
@@ -68,7 +70,7 @@ class InvoiceConverter(object):
 
         #计算总页数
         if not self.skip :
-            self.totalPage = len(pdfFiles)
+            self.totalPaper = self.totalPage = len(pdfFiles)
 
         #计算总金额
         if not self.skip :
@@ -82,7 +84,7 @@ class InvoiceConverter(object):
                 self.totalAmount +=  float(pdfFile[:-4])
 
 
-    def fillTextInSlide(self, slide, curPage, totalPage, totalAmount, curAmount):
+    def fillTextInSlide(self, slide, curPage, totalPage, totalAmount, curAmount, totalPaper):
         for shape in slide.shapes:
             if not shape.has_text_frame:
                 continue
@@ -99,7 +101,7 @@ class InvoiceConverter(object):
                     if run.text == '经办人：':
                         run.text = '经办人：{}'.format(self.name)
                     if run.text == '第      页        共      页':
-                        run.text = '第  {}  页        共  {}  页'.format(curPage, totalPage)
+                        run.text = '第  {0}  页        共  {1:.0f}  页'.format(curPage, totalPaper)
 
     def batchInsertPngInSlide(self, path_to_tmpl_presentation, imgsPath):
         left, top, width, height= Cm(4.28), Cm(2.79), Cm(25.58), Cm(16.59)
@@ -116,7 +118,7 @@ class InvoiceConverter(object):
 
             # 填入文字内容
             curAmount = float(pngfile[:-4])
-            self.fillTextInSlide(slide, index+1, self.totalPage, self.totalAmount, curAmount)
+            self.fillTextInSlide(slide, index+1, self.totalPage, self.totalAmount, curAmount, self.totalPaper)
 
             pptxPath = os.path.join(self.tempPptxPath, os.path.splitext(pngfile)[0]+'.pptx')
             prs.save(pptxPath)
@@ -190,7 +192,7 @@ class InvoiceConverter(object):
         merger.close()
 
 def excetue():
-    if len(sys.argv) != 2 and len(sys.argv) != 4:
+    if len(sys.argv) != 2 and len(sys.argv) != 5:
         print('参数个数不对')
         return
 
@@ -198,14 +200,16 @@ def excetue():
 
     totalPage = None
     totalAmount = None
+    totalPaper = None
     skip = False
 
-    if len(sys.argv) == 4:
-        totalPage = int(sys.argv[2])
-        totalAmount = float(sys.argv[3])
+    if len(sys.argv) == 5:
+        totalPage = int(sys.argv[2])        #凭证总张数
+        totalAmount = float(sys.argv[3])    #凭证总金额
+        totalPaper = float(sys.argv[4])     #总页数
         skip = True
 
-    ic = InvoiceConverter(name, totalPage, totalAmount, skip)
+    ic = InvoiceConverter(name, totalPage, totalAmount, totalPaper, skip)
 
     # pdf转图片
     ic.batchPdf2Png(ic.invoicePath, ic.tempImagePath)
