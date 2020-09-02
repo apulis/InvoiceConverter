@@ -14,6 +14,8 @@ def numToCN(num):
 
     if num < 10:
         cn = gdict[num]
+    elif num == 10:
+        cn = gdict[10]
     elif num > 10 and num < 100 :
         if num % 10 == 0:
             cn = '{0}拾'.format(gdict[num // 10])
